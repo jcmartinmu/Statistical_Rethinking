@@ -14,3 +14,8 @@ Bayesian data analysis usually means producing a story for how the data came to 
 * **Causal:** presents a theory of how some events produce other events.
 
 All data stories are complete in the sense that they are sufficient for specifying an algorithm for simulating new data. Then, the data story is translated into a formal probability model.
+
+
+### Bayesian Updating
+
+A Bayesian model begins with one set of plausibilities assigned to each of these possibilities. These are the prior plausibilities. Then, it updates them in a light of the data to produce the posterior plausibilities. This updating process is a kind of learning called **Bayesian Updating**.
