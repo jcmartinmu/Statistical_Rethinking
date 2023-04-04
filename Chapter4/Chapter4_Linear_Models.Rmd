@@ -1,0 +1,174 @@
+---
+title: "Linear Models"
+author: "Juan Martinez"
+date: "3/31/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(readr)
+library(gdata)
+library(rstan)
+library(brms)
+library(parallel)
+```
+
+# Introduction
+
+
+
+```{r}
+n = 1000
+m = 16
+
+pos <- replicate(n, sum(runif(m, -1, 1)))
+```
+
+
+```{r}
+prod(1 + runif(12, 0, 0.1))
+```
+```{r}
+set.seed(2018)
+data(diamonds)
+
+diamonds.full <- na.omit(diamonds) %>%
+  drop.levels # remove missing data
+
+diamonds.full$rows <- as.numeric(rownames(diamonds.full))
+
+diamonds.train <- diamonds.full %>%
+  dplyr::group_by(color, clarity) %>%
+  dplyr::sample_n(size = 30) # subset
+  
+diamonds.keep <-  dplyr::filter(diamonds.full, !rows %in% diamonds.train$rows) # remove row in training set
+
+diamonds.test <- diamonds.keep[sample(nrow(diamonds.keep), 20000), ]
+
+# get rid of zero values and outliers
+
+diamonds.train <- diamonds.train %>% dplyr::filter( x> 0, y >0, z > 0,
+                                                    price > 0,
+                                                    price < max(diamonds$price))
+
+diamonds.test <- diamonds.test %>% dplyr::filter( x> 0, y >0, z > 0,
+                                                  price > 0,
+                                                  price < max(diamonds$price))
+```
+
+
+
+```{r}
+brm.1 <- brm(log(price) ~ log(carat), 
+             
+             brmsfamily("gaussian"), 
+     
+             data = na.omit(diamonds.train), 
+             
+             chains = 4, #specify the number of Markov chains
+             
+             cores = getOption("mc.cores", 1),
+             
+             iter = 3000, warmup = 1500, thin = 5,
+             
+             prior =  c(prior(normal(0, 3), "b"), # set normal prior on regression coefficients (mean of 0, location of 3)
+                        
+                        prior(normal(0, 3), "Intercept")))
+```
+```{r}
+summary(brm.1)
+```
+
+Then,
+
+```{r}
+plot(brm.1)
+```
+
+
+
+```{r}
+loo(brm.1, cores = getOption("mc.cores", 1))
+```
+
+```{r}
+plot(loo(brm.1, cores = getOption("mc.cores", 1)))
+```
+
+```{r}
+pp_check(brm.1, nsamples = 100)
+```
+
+# Transit data
+
+```{r}
+pre_board_train <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/pre_lock_train_data.csv')
+pre_board_train$hour <- as_factor(pre_board_train$hour)
+pre_board_train$month <- as_factor(pre_board_train$month)
+pre_board_train$service_kind <- as_factor(pre_board_train$service_kind)
+
+pre_board_test <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/pre_lock_test_data.csv')
+```
+
+Then,
+
+```{r}
+bayes_poiss_model <- brm(board_count ~ .,
+                         data = pre_board_train,
+                         family = poisson(), cores = 4)
+```
+
+Bootstrap method chapter 7
+
+Summary:
+
+```{r}
+summary(bayes_poiss_model)
+```
+
+Plots:
+
+```{r}
+plot(bayes_poiss_model)
+```
+
+Leave-one-out cross-validation:
+
+```{r}
+loo(bayes_poiss_model, cores = getOption("mc.cores", 1))
+```
+
+# Predictions:
+
+```{r}
+bayes_poiss_model_pred <- predict(bayes_poiss_model, pre_board_test)
+bayes_poiss_model_pred <- as.data.frame(bayes_poiss_model_pred)
+
+bayes_poiss_model_test_RMSE <- sqrt(mean((bayes_poiss_model_pred$Estimate - pre_board_test$board_count)^{2}))
+```
+
+Plots:
+
+```{r}
+bayes_poiss_model_pred %>%
+  ggplot(aes(x = pre_board_test$board_count, y = bayes_poiss_model_pred$Estimate)) +
+  geom_point(alpha = 0.25) +
+  scale_y_continuous(breaks=c(0:10)) +
+  scale_x_continuous(breaks=c(0:10))
+```
+```{r fig.width=20}
+bayes_poiss_model_pred %>%
+  ggplot(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = Estimate)) +
+  geom_point(aes(colour = 'estimated'), alpha = 0.25) +
+  geom_line(aes(colour = 'estimated'), alpha = 0.25) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5, fill = 'estimated'), alpha = 0.1) +
+  geom_point(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
+             alpha = 0.25) +
+  geom_line(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
+             alpha = 0.25) 
+```
+
