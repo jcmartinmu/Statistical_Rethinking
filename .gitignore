@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+Data/Post_lock.csv
+Data/Pre_lock.csv
+Data/Transit_Data/new_carta.csv
+
