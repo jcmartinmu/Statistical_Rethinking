@@ -15,111 +15,152 @@ library(gdata)
 library(rstan)
 library(brms)
 library(parallel)
+library(bayestestR)
+library(bayesplot)
+library(rstanarm)
+library(broom)
+library(insight)
+library(mlbench)
+library(PerformanceAnalytics)
 ```
 
 # Introduction
 
+We will compare naive and bayesian regression models in public transportation demand:
 
+* Poisson
+* Negative Binomial
+* Zero-Inflated 
+* Hurdle
 
-```{r}
-n = 1000
-m = 16
+The naive version of these models is already trained, so we only train and test the bayesian version.
 
-pos <- replicate(n, sum(runif(m, -1, 1)))
-```
-
-
-```{r}
-prod(1 + runif(12, 0, 0.1))
-```
-```{r}
-set.seed(2018)
-data(diamonds)
-
-diamonds.full <- na.omit(diamonds) %>%
-  drop.levels # remove missing data
-
-diamonds.full$rows <- as.numeric(rownames(diamonds.full))
-
-diamonds.train <- diamonds.full %>%
-  dplyr::group_by(color, clarity) %>%
-  dplyr::sample_n(size = 30) # subset
-  
-diamonds.keep <-  dplyr::filter(diamonds.full, !rows %in% diamonds.train$rows) # remove row in training set
-
-diamonds.test <- diamonds.keep[sample(nrow(diamonds.keep), 20000), ]
-
-# get rid of zero values and outliers
-
-diamonds.train <- diamonds.train %>% dplyr::filter( x> 0, y >0, z > 0,
-                                                    price > 0,
-                                                    price < max(diamonds$price))
-
-diamonds.test <- diamonds.test %>% dplyr::filter( x> 0, y >0, z > 0,
-                                                  price > 0,
-                                                  price < max(diamonds$price))
-```
-
-
+## Transit data
 
 ```{r}
-brm.1 <- brm(log(price) ~ log(carat), 
-             
-             brmsfamily("gaussian"), 
-     
-             data = na.omit(diamonds.train), 
-             
-             chains = 4, #specify the number of Markov chains
-             
-             cores = getOption("mc.cores", 1),
-             
-             iter = 3000, warmup = 1500, thin = 5,
-             
-             prior =  c(prior(normal(0, 3), "b"), # set normal prior on regression coefficients (mean of 0, location of 3)
-                        
-                        prior(normal(0, 3), "Intercept")))
-```
-```{r}
-summary(brm.1)
-```
-
-Then,
-
-```{r}
-plot(brm.1)
-```
-
-
-
-```{r}
-loo(brm.1, cores = getOption("mc.cores", 1))
-```
-
-```{r}
-plot(loo(brm.1, cores = getOption("mc.cores", 1)))
-```
-
-```{r}
-pp_check(brm.1, nsamples = 100)
-```
-
-# Transit data
-
-```{r}
-pre_board_train <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/pre_lock_train_data.csv')
+pre_board_train <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/new_bus_stop_12/pre_lock_train_data.csv')
 pre_board_train$hour <- as_factor(pre_board_train$hour)
 pre_board_train$month <- as_factor(pre_board_train$month)
 pre_board_train$service_kind <- as_factor(pre_board_train$service_kind)
 
-pre_board_test <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/pre_lock_test_data.csv')
+pre_board_test <- read_csv('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/new_bus_stop_12/pre_lock_test_data.csv')
+```
+
+The `pre_board_train` and `pre_board_test` datasets have been upload, so we proceed to standardize the variables before defining the prior distributions for each explanatory variable.
+
+### `mean_temp`
+
+The overall mean temperature distribution is:
+
+```{r}
+
+pre_board_train %>%
+  ggplot(aes(x = mean_temp)) +
+  geom_histogram()
+
+```
+
+Mean temperature grouped by hour:
+
+```{r}
+pre_board_train %>%
+  ggplot(aes(x = mean_temp)) +
+  geom_histogram() +
+  facet_wrap(~hour)
+```
+Then,
+
+```{r}
+mean_temp_model <- glm(board_count ~ mean_temp, family = poisson(), data = pre_board_train)
+summary(mean_temp_model)
+```
+
+### `mean_precip`
+
+Precipitation distribution:
+
+```{r}
+
+pre_board_train %>%
+  ggplot(aes(x = mean_precip)) +
+  geom_histogram()
+
 ```
 
 Then,
 
 ```{r}
-bayes_poiss_model <- brm(board_count ~ .,
-                         data = pre_board_train,
-                         family = poisson(), cores = 4)
+mean_temp_model <- glm(board_count ~ mean_temp, family = poisson(), data = pre_board_train)
+summary(mean_temp_model)
+```
+
+
+### `month_average_board_count`
+
+```{r}
+
+pre_board_train %>%
+  ggplot(aes(x = month_average_board_count)) +
+  geom_histogram()
+
+```
+
+Then,
+
+```{r}
+mean_month_average_board_count_model <- glm(board_count ~ month_average_board_count,
+                                            family = poisson(), data = pre_board_train)
+summary(mean_month_average_board_count_model)
+```
+
+### `surrounding_board_count`
+
+
+```{r}
+
+pre_board_train %>%
+  ggplot(aes(x = surrounding_board_count)) +
+  geom_histogram()
+
+```
+
+Then,
+
+```{r}
+surrounding_board_count_model <- glm(board_count ~ surrounding_board_count,
+                                     family = poisson(), data = pre_board_train)
+
+summary(surrounding_board_count_model)
+```
+
+# Bayesian Model with hour of the day as predictor
+
+Variable distribution:
+
+```{r}
+pre_board_train %>%
+  group_by(hour) %>%
+  count() %>%
+  ggplot(aes(x = hour, y = n)) +
+  geom_bar(stat = 'identity')
+```
+
+Prior distribution:
+
+
+```{r}
+prior_hour <- prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep =''))
+```
+
+
+to train the poisson model:
+
+```{r}
+
+bayes_pre_poiss_model_hour <- brm(board_count ~ 1 + hour,
+                                  data = pre_board_train,
+                                  family = poisson(), cores = 4,
+                                  prior = prior_hour)
 ```
 
 Bootstrap method chapter 7
@@ -127,48 +168,208 @@ Bootstrap method chapter 7
 Summary:
 
 ```{r}
-summary(bayes_poiss_model)
+summary(bayes_pre_poiss_model_hour)
 ```
 
 Plots:
 
 ```{r}
-plot(bayes_poiss_model)
+plot(bayes_pre_poiss_model_hour)
 ```
+
+```{r}
+describe_prior(bayes_pre_poiss_model_hour)
+```
+
+
+
+```{r}
+describe_posterior(bayes_pre_poiss_model_hour)
+```
+
 
 Leave-one-out cross-validation:
 
 ```{r}
-loo(bayes_poiss_model, cores = getOption("mc.cores", 1))
+loo(bayes_pre_poiss_model_hour, cores = getOption("mc.cores", 1))
 ```
 
-# Predictions:
+## Predictions:
 
 ```{r}
-bayes_poiss_model_pred <- predict(bayes_poiss_model, pre_board_test)
-bayes_poiss_model_pred <- as.data.frame(bayes_poiss_model_pred)
+bayes_pre_poiss_model_hour_pred <- predict(bayes_pre_poiss_model_hour, pre_board_test)
+bayes_pre_poiss_model_hour_pred <- as.data.frame(bayes_pre_poiss_model_hour_pred)
 
-bayes_poiss_model_test_RMSE <- sqrt(mean((bayes_poiss_model_pred$Estimate - pre_board_test$board_count)^{2}))
+bayes_pre_poiss_model_hour_test_RMSE <- sqrt(mean((bayes_pre_poiss_model_hour_pred$Estimate - pre_board_test$board_count)^{2}))
+
+bayes_pre_poiss_model_hour_test_RMSE
 ```
 
 Plots:
 
 ```{r}
-bayes_poiss_model_pred %>%
+bayes_pre_poiss_model_hour_pred %>%
   ggplot(aes(x = pre_board_test$board_count, y = bayes_poiss_model_pred$Estimate)) +
   geom_point(alpha = 0.25) +
   scale_y_continuous(breaks=c(0:10)) +
   scale_x_continuous(breaks=c(0:10))
 ```
 ```{r fig.width=20}
-bayes_poiss_model_pred %>%
-  ggplot(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = Estimate)) +
+bayes_pre_poiss_model_hour_pred %>%
+  ggplot(aes(x = (1:dim(bayes_pre_poiss_model_hour_pred)[1]), y = Estimate)) +
   geom_point(aes(colour = 'estimated'), alpha = 0.25) +
   geom_line(aes(colour = 'estimated'), alpha = 0.25) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5, fill = 'estimated'), alpha = 0.1) +
-  geom_point(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5, fill = 'estimated'), alpha = 0.2) +
+  geom_point(aes(x = (1:dim(bayes_pre_poiss_model_hour_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
              alpha = 0.25) +
-  geom_line(aes(x = (1:dim(bayes_poiss_model_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
+  geom_line(aes(x = (1:dim(bayes_pre_poiss_model_hour_pred)[1]), y = pre_board_test$board_count, colour = 'obs'),
              alpha = 0.25) 
+```
+
+
+# Bayesian Model with Hourly Mean Temperature as predictor
+
+My first approach only considers a prior distribution for both the coefficient and intercept:
+
+
+```{r}
+prior_mean_temp <- prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp')
+```
+
+Then,
+
+```{r}
+bayes_pre_poiss_model_mean_temp <- brm(board_count ~ 1 + mean_temp,
+                                       data = pre_board_train,
+                                       family = poisson(), cores = 4,
+                                       prior = prior_mean_temp)
+
+summary(bayes_pre_poiss_model_mean_temp)
+```
+
+```{r}
+plot(bayes_pre_poiss_model_mean_temp)
+```
+
+
+The second approach considers a unique prior distribution for the coefficient and intercept:
+
+
+```{r}
+prior_mean_temp <- c(prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+                     prior("normal(0, 0.482)", class = 'Intercept'))
+```
+
+Then,
+
+```{r}
+bayes_pre_poiss_model_mean_temp <- brm(board_count ~ 1 + mean_temp,
+                                       data = pre_board_train,
+                                       family = poisson(), cores = 4,
+                                       prior = prior_mean_temp)
+
+summary(bayes_pre_poiss_model_mean_temp)
+```
+
+```{r}
+plot(bayes_pre_poiss_model_mean_temp)
+```
+
+## Predictions
+
+```{r}
+bayes_pre_poiss_model_mean_temp_pred <- predict(bayes_pre_poiss_model_mean_temp,
+                                                pre_board_test)
+
+r.sq <- as.character(round(summary(lm(pre_board_test$board_count ~ bayes_pre_poiss_model_mean_temp_pred[,1]))$r.squared, 2))
+
+r.sq2 <- paste('R^2 == ', r.sq)
+
+ggplot() +
+  geom_point(aes(x = bayes_pre_poiss_model_mean_temp_pred[,1],
+                 y = pre_board_test$board_count)) +
+  geom_errorbar(aes(x = bayes_pre_poiss_model_mean_temp_pred[,1],
+                    y = pre_board_test$board_count,
+                    xmin = bayes_pre_poiss_model_mean_temp_pred[,1] -
+                      bayes_pre_poiss_model_mean_temp_pred[,2],
+                    xmax = bayes_pre_poiss_model_mean_temp_pred[,1] +
+                      bayes_pre_poiss_model_mean_temp_pred[,2])) +
+  geom_smooth(aes(x = bayes_pre_poiss_model_mean_temp_pred[,1],
+                  y = pre_board_test$board_count), method = 'lm',
+              color = "red", lty = 2) +
+  geom_text(aes(x= 6, y=9.5, label = r.sq2, size = 8), parse=TRUE, show.legend = F) +
+  xlab("Predicted") +
+  ylab("Observed")
+
+```
+
+
+# Full Bayesian Poisson Regression Model
+
+```{r}
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+                     prior("normal(0, 0.482)", class = 'Intercept'))
+```
+
+Then,
+
+```{r}
+bayes_pre_poiss_model <- brm(board_count ~ 1 + hour + mean_temp,
+                             data = pre_board_train,
+                             family = poisson(), cores = 4,
+                             prior = priors)
+
+summary(bayes_pre_poiss_model)
+```
+
+
+```{r}
+plot(bayes_pre_poiss_model)
+```
+
+
+# Naive Poisson Regression Model
+
+Comparison with the Naive Poisson model:
+
+```{r}
+Pre_Poisson_model <- readRDS('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/Pre_Poisson_model.rds')
+summary(Pre_Poisson_model)
+
+```
+
+# Complete Bayesian Model
+
+```{r}
+priors_var = c(prior(normal(0, 0.9), class = b, coef = 'month'),
+               prior(normal(0, 0.95), class = Intercept, coef = 'month'),
+               prior(normal(0, 1.1), class = b, coef = 'service_kind'),
+               prior(normal(0, 1.15), class = Intercept, coef = 'service_kind'),
+               prior(normal(0, 1), class = b, coef = 'hour'),
+               prior(normal(0, 1.5), class = Intercept, coef = 'hour'),
+               prior(normal(0, 2.789), class = b, coef = 'mean_temp'),
+               prior(normal(0, 0.17), class = Intercept, coef = 'mean_temp'),
+               prior(normal(0, 0.214), class = b, coef = 'mean_precip'),
+               prior(normal(0, 0.544), class = Intercept, coef = 'mean_precip'),
+               prior(normal(0, 0.010), class = b, coef = 'month_average_board_count'),
+               prior(normal(0, 0.569), class = Intercept, coef = 'month_average_board_count'),
+               prior(normal(0, 0.367), class = b, coef = 'surrounding_board_count'),
+               prior(normal(0, 0.506), class = Intercept, coef = 'surrounding_board_count'))
+
+bayes_pre_poiss_model2 <- brm(board_count ~ .,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors_var)
+```
+
+
+
+```{r}
+priors_by_fn <- get_prior(board_count ~ .,
+                          data = pre_board_train,
+                          family = poisson())
+
+priors_by_fn
 ```
 
