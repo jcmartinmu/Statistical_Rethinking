@@ -90,8 +90,8 @@ pre_board_train %>%
 Then,
 
 ```{r}
-mean_temp_model <- glm(board_count ~ mean_temp, family = poisson(), data = pre_board_train)
-summary(mean_temp_model)
+mean_precip_model <- glm(board_count ~ mean_precip, family = poisson(), data = pre_board_train)
+summary(mean_precip_model)
 ```
 
 
@@ -323,9 +323,60 @@ bayes_pre_poiss_model <- brm(board_count ~ 1 + hour + mean_temp,
 summary(bayes_pre_poiss_model)
 ```
 
+Plot chains:
 
 ```{r}
 plot(bayes_pre_poiss_model)
+```
+
+* WAIC:
+
+```{r}
+waic_initial_model <- WAIC(bayes_pre_poiss_model)
+waic_initial_model
+```
+
+
+
+Then, a new model:
+
+* Priors:
+
+```{r}
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+            prior("normal(0, 1)", class = 'Intercept'),
+            prior("normal(0, 0.2149)", class = 'b', coef = 'mean_precip'))
+```
+
+
+* Model:
+
+```{r}
+bayes_pre_poiss_model1 <- brm(board_count ~ 1 + hour + mean_temp + mean_precip,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors)
+
+summary(bayes_pre_poiss_model1)
+```
+* WAIC:
+
+```{r}
+waic_initial_model1 <- WAIC(bayes_pre_poiss_model1)
+waic_initial_model1
+```
+
+* loo:
+
+```{r}
+loo(bayes_pre_poiss_model1, cores = getOption("mc.cores", 1))
+```
+
+* loo-compare:
+
+```{r}
+loo_compare(waic_initial_model, waic_initial_model1)
 ```
 
 
