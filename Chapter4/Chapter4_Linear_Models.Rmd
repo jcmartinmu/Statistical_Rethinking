@@ -133,6 +133,17 @@ surrounding_board_count_model <- glm(board_count ~ surrounding_board_count,
 summary(surrounding_board_count_model)
 ```
 
+### `service_kind`
+
+```{r}
+service_kind_model <- glm(board_count ~ service_kind,
+                                family = poisson(), data = pre_board_train)
+
+summary(service_kind_model)
+```
+
+
+
 # Bayesian Model with hour of the day as predictor
 
 Variable distribution:
@@ -227,6 +238,9 @@ bayes_pre_poiss_model_hour_pred %>%
 ```
 
 
+
+
+
 # Bayesian Model with Hourly Mean Temperature as predictor
 
 My first approach only considers a prior distribution for both the coefficient and intercept:
@@ -304,6 +318,49 @@ ggplot() +
 ```
 
 
+# Bayesian Model with month of the day as predictor
+
+Variable distribution:
+
+```{r}
+pre_board_train %>%
+  group_by(month) %>%
+  count() %>%
+  ggplot(aes(x = month, y = n)) +
+  geom_bar(stat = 'identity')
+```
+
+
+## Naive Model with month of the day as predictor
+
+```{r}
+
+month_model <- glm(board_count ~ month, family = poisson(), data = pre_board_train)
+
+summary(month_model)
+```
+
+Prior distribution:
+
+
+```{r}
+prior_month <- prior_string("normal(0, 1.5)", class = 'b', coef = paste('month', 2:12, sep =''))
+```
+
+Then, we train the bayesian model:
+
+
+```{r}
+bayes_pre_poiss_model_month <- brm(board_count ~ 1 + month,
+                                   data = pre_board_train,
+                                   family = poisson(), cores = 4,
+                                   prior = prior_month)
+
+summary(bayes_pre_poiss_model_month)
+```
+
+
+
 # Full Bayesian Poisson Regression Model
 
 ```{r}
@@ -378,6 +435,152 @@ loo(bayes_pre_poiss_model1, cores = getOption("mc.cores", 1))
 ```{r}
 loo_compare(waic_initial_model, waic_initial_model1)
 ```
+## Model: `hour` + `mean_temp` + `mean_precip` + `surrounding_board`
+
+Then, a new model:
+
+* Priors:
+
+```{r}
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+            prior("normal(0, 1)", class = 'Intercept'),
+            prior("normal(0, 0.2149)", class = 'b', coef = 'mean_precip'),
+            prior("normal(0, 0.36792)", class = 'b', coef = 'surrounding_board_count'))
+```
+
+Then,
+
+
+```{r}
+bayes_pre_poiss_model2 <- brm(board_count ~ 1 + hour + mean_temp + mean_precip +
+                                surrounding_board_count,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors)
+
+summary(bayes_pre_poiss_model2)
+```
+* WAIC:
+
+```{r}
+waic_initial_model2 <- WAIC(bayes_pre_poiss_model2)
+waic_initial_model2
+```
+
+* loo:
+
+```{r}
+loo(bayes_pre_poiss_model2, cores = getOption("mc.cores", 2))
+```
+
+* loo-compare:
+
+```{r}
+loo_compare(waic_initial_model, waic_initial_model2)
+```
+
+* Posterior description
+
+```{r}
+describe_posterior(bayes_pre_poiss_model2)
+```
+
+## Model: `hour` + `mean_temp` + `mean_precip` + `surrounding_board` + `month_average_board_count`
+
+Then, a new model: 
+
+* Priors:
+
+```{r}
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+            prior("normal(0, 1)", class = 'Intercept'),
+            prior("normal(0, 0.2149)", class = 'b', coef = 'mean_precip'),
+            prior("normal(0, 0.36792)", class = 'b', coef = 'surrounding_board_count'),
+            prior("normal(0, 0.01055)", class = 'b', coef = 'month_average_board_count'))
+```
+
+Then,
+
+
+```{r}
+bayes_pre_poiss_model3 <- brm(board_count ~ 1 + hour + mean_temp + mean_precip +
+                                surrounding_board_count + month_average_board_count,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors)
+
+summary(bayes_pre_poiss_model3)
+```
+
+## Model: `hour` + `mean_temp` + `mean_precip` + `surrounding_board` + `month_average_board_count` + `month`
+
+Then, a new model: 
+
+* Priors:
+
+```{r}
+
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+            prior("normal(0, 1)", class = 'Intercept'),
+            prior("normal(0, 0.2149)", class = 'b', coef = 'mean_precip'),
+            prior("normal(0, 0.36792)", class = 'b', coef = 'surrounding_board_count'),
+            prior("normal(0, 0.01055)", class = 'b', coef = 'month_average_board_count'),
+            prior_string("normal(0, 1.5)", class = 'b', coef = paste('month', 2:12, sep ='')))
+```
+
+Then,
+
+```{r}
+bayes_pre_poiss_model4 <- brm(board_count ~ 1 + hour + mean_temp + mean_precip +
+                                surrounding_board_count + month_average_board_count +
+                                month,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors)
+
+summary(bayes_pre_poiss_model4)
+```
+
+* Posterior description
+
+```{r}
+describe_posterior(bayes_pre_poiss_model4)
+```
+
+## Model: `hour` + `mean_temp` + `mean_precip` + `surrounding_board` + `month_average_board_count` + `month` + `service_kind`
+
+Then, a new model: 
+
+* Priors:
+
+```{r}
+
+priors <- c(prior_string("normal(0, 1.5)", class = 'b', coef = paste('hour', 5:23, sep ='')),
+            prior("normal(0, 0.393)", class = 'b', coef = 'mean_temp'),
+            prior("normal(0, 1)", class = 'Intercept'),
+            prior("normal(0, 0.2149)", class = 'b', coef = 'mean_precip'),
+            prior("normal(0, 0.36792)", class = 'b', coef = 'surrounding_board_count'),
+            prior("normal(0, 0.01055)", class = 'b', coef = 'month_average_board_count'),
+            prior_string("normal(0, 1.5)", class = 'b', coef = paste('month', 2:12, sep ='')),
+            prior_string("normal(0, 0.53763)", class = 'b', coef = 'service_kindweekday'))
+```
+
+
+Then,
+
+```{r}
+bayes_pre_poiss_model5 <- brm(board_count ~ 1 + hour + mean_temp + mean_precip +
+                                surrounding_board_count + month_average_board_count +
+                                month + service_kind,
+                              data = pre_board_train,
+                              family = poisson(), cores = 4,
+                              prior = priors)
+
+summary(bayes_pre_poiss_model5)
+```
 
 
 # Naive Poisson Regression Model
@@ -385,7 +588,7 @@ loo_compare(waic_initial_model, waic_initial_model1)
 Comparison with the Naive Poisson model:
 
 ```{r}
-Pre_Poisson_model <- readRDS('C:/Users/jcmar/OneDrive/Documents/Spring_2023/Statistical_Rethinking/Data/bus_stop_12/Pre_Poisson_model.rds')
+Pre_Poisson_model <- readRDS('Pre_Poisson_model.rds')
 summary(Pre_Poisson_model)
 
 ```
